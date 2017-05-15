@@ -26,21 +26,60 @@ class DbHandler {
      * @param String $email User login email id
      * @param String $password User login password
      */
-    public function createUser($name, $email, $password) {
+//    public function createUser($email, $device_id) {
+//        require_once 'PassHash.php';
+//        $response = array();
+//
+//        // First check if user already existed in db
+//        if (!$this->isUserExists($email)) {
+//            // Generating password hash
+//            $password_hash = PassHash::hash($password);
+//
+//            // Generating API key
+//            $api_key = $this->generateApiKey();
+//
+//            // insert query
+//            $stmt = $this->conn->prepare("INSERT INTO users(name, email, password_hash, api_key, status) values(?, ?, ?, ?, 1)");
+//            $stmt->bind_param("ssss", $name, $email, $password_hash, $api_key);
+//
+//            $result = $stmt->execute();
+//
+//            $stmt->close();
+//
+//            // Check for successful insertion
+//            if ($result) {
+//                // User successfully inserted
+//                return USER_CREATED_SUCCESSFULLY;
+//            } else {
+//                // Failed to create user
+//                return USER_CREATE_FAILED;
+//            }
+//        } else {
+//            // User with same email already existed in the db
+//            return USER_ALREADY_EXISTED;
+//        }
+//
+//        return $response;
+//    }
+    
+     public function createUser($fname, $lname, $phone, $email, $device_id, $firebase_reg_id) {
         require_once 'PassHash.php';
         $response = array();
 
         // First check if user already existed in db
         if (!$this->isUserExists($email)) {
             // Generating password hash
-            $password_hash = PassHash::hash($password);
+            $password_hash = PassHash::hash($email);
 
             // Generating API key
             $api_key = $this->generateApiKey();
 
+                                   
             // insert query
-            $stmt = $this->conn->prepare("INSERT INTO users(name, email, password_hash, api_key, status) values(?, ?, ?, ?, 1)");
-            $stmt->bind_param("ssss", $name, $email, $password_hash, $api_key);
+            $stmt = $this->conn->prepare("INSERT INTO users"
+                    . "(fname,lname,phone, email, device_id,password_hash, api_key,firebase_reg_id)"
+                    . " values('$fname', '$lname', '$phone', '$email', '$device_id','$password_hash',"
+                    . " '$api_key', '$firebase_reg_id')");
 
             $result = $stmt->execute();
 
@@ -123,23 +162,26 @@ class DbHandler {
      * @param String $email User email id
      */
     public function getUserByEmail($email) {
-        $stmt = $this->conn->prepare("SELECT name, email, api_key, status, created_at FROM users WHERE email = ?");
-        $stmt->bind_param("s", $email);
-        if ($stmt->execute()) {
-            // $user = $stmt->get_result()->fetch_assoc();
-            $stmt->bind_result($name, $email, $api_key, $status, $created_at);
-            $stmt->fetch();
-            $user = array();
-            $user["name"] = $name;
-            $user["email"] = $email;
-            $user["api_key"] = $api_key;
-            $user["status"] = $status;
-            $user["created_at"] = $created_at;
-            $stmt->close();
-            return $user;
-        } else {
-            return NULL;
-        }
+//        $stmt = $this->conn->prepare("SELECT name, email, api_key, status, created_at FROM users WHERE email = ?");
+//        $stmt->bind_param("s", $email);
+//        if ($stmt->execute()) {
+//            // $user = $stmt->get_result()->fetch_assoc();
+//            $stmt->bind_result($name, $email, $api_key, $status, $created_at);
+//            $stmt->fetch();
+//            $user = array();
+//            $user["name"] = $name;
+//            $user["email"] = $email;
+//            $user["api_key"] = $api_key;
+//            $user["status"] = $status;
+//            $user["created_at"] = $created_at;
+//            $stmt->close();
+//            return $user;
+//        } else {
+//            return NULL;
+//        
+//        
+        $query = "SELECT * FROM users where email = '$email'";
+        return self::getDataByQuery($this, $query);
     }
 
     /**
@@ -262,20 +304,36 @@ class DbHandler {
    
         $offset = ($page_no-1)*$limit;
 
+        
+
+        
+                
+                
+//                "SELECT p.*, c.* FROM posts p, categories c "
+//                    . "WHERE p.id_language = $language_id AND "
+//                    . "p.id_category = c.id_category AND"
+//                    . " status = 1 ORDER BY id_post DESC "
+//                    . "LIMIT $offset,$limit ""
+//                        . "
         // DashBoard Latest
         if($latest && $category_id == NULL ){
-            $query = "SELECT p.*, c.* FROM posts p, categories c "
-                    . "WHERE p.id_language = $language_id AND "
-                    . "p.id_category = c.id_category AND"
-                    . " status = 1 ORDER BY id_post DESC "
-                    . "LIMIT $offset,$limit ";
+            $query = "SELECT p.*, c.*, "
+                    . "( SELECT COUNT(upl.id_post) FROM user_post_likes upl WHERE upl.id_post = p.id_post ) as post_likes_count, "
+                    . "(SELECT EXISTS(SELECT upl.id_user FROM user_post_likes upl WHERE upl.id_post = p.id_post AND upl.id_user = $user_id)) as is_liked "
+                    . "FROM posts p, categories c "
+                    . "WHERE p.id_language = $language_id "
+                    . "AND p.id_category = c.id_category AND status = 1 "
+                    . "ORDER BY id_post DESC LIMIT $offset,$limit ";
 					
 					
             return self::getDataByQuery($this, $query);
         }
         // DashBoard TOP
         if($top && $category_id == NULL){
-            $query = "SELECT p.*, c.* FROM posts p, categories c "
+            $query = "SELECT p.*, c.*, "
+                     . "( SELECT COUNT(upl.id_post) FROM user_post_likes upl WHERE upl.id_post = p.id_post ) as post_likes_count, "
+                    . "(SELECT EXISTS(SELECT upl.id_user FROM user_post_likes upl WHERE upl.id_post = p.id_post AND upl.id_user = $user_id)) as is_liked "
+                    . " FROM posts p, categories c "
                     . "WHERE p.id_language = $language_id AND "
                     . "p.id_category = c.id_category AND "
                     . " status = 1 ORDER BY post_likes_count DESC "
@@ -284,7 +342,10 @@ class DbHandler {
         }
         // Category TOP
         if($latest && $category_id != NULL){
-            $query = "SELECT p.*, c.* FROM posts p, categories c
+            $query = "SELECT p.*, c.*, 
+                     ( SELECT COUNT(upl.id_post) FROM user_post_likes upl WHERE upl.id_post = p.id_post ) as post_likes_count,
+                     ( SELECT EXISTS(SELECT upl.id_user FROM user_post_likes upl WHERE upl.id_post = p.id_post AND upl.id_user = $user_id)) as is_liked
+                    FROM posts p, categories c
                     WHERE p.id_language = $language_id AND 
                     p.id_category = c.id_category AND 
                     p.id_category = $category_id AND status = 1
@@ -296,7 +357,10 @@ class DbHandler {
         }
         // DashBoard TOP
         if($top && $category_id != NULL){
-            $query = "SELECT p.*, c.* FROM posts p, categories c"
+            $query = "SELECT p.*, c.*, "
+                    ."    ( SELECT COUNT(upl.id_post) FROM user_post_likes upl WHERE upl.id_post = p.id_post ) as post_likes_count,"
+                    ." ( SELECT EXISTS(SELECT upl.id_user FROM user_post_likes upl WHERE upl.id_post = p.id_post AND upl.id_user = $user_id)) as is_liked"
+                    . " FROM posts p, categories c"
                     . " WHERE p.id_language = $language_id AND  
                         p.id_category = c.id_category AND 
 			p.id_category = $category_id AND status = 1
@@ -312,7 +376,7 @@ class DbHandler {
     
     public static function getDataByQuery($context, $query) {
 
-        
+//        echo $query."\n";
         $stmt = $context->conn->prepare($query);
         $stmt->execute();
 
@@ -332,6 +396,8 @@ class DbHandler {
     
     public static function updateDataByQuery($context, $query) 
     {
+        
+//        echo $query;
         $stmt = $context->conn->prepare($query);
         $stmt->execute();
         $num_affected_rows = $stmt->affected_rows;
@@ -799,6 +865,21 @@ class DbHandler {
 
     }
     
+    public function likePost($user_id,$post_id) {
+
+        $query = "INSERT into user_post_likes(id_user,id_post) VALUES ($user_id, $post_id)";
+        
+    return self::updateDataByQuery($this, $query);
+
+    }
+    
+    public function unLikePost($user_id,$post_id) {
+
+        $query = "DELETE FROM user_post_likes WHERE id_user = $user_id AND id_post = $post_id";
+        
+    return self::updateDataByQuery($this, $query);
+
+    }    
     public static function getPostByID($context, $post_id) {
 
 
@@ -831,8 +912,9 @@ class DbHandler {
     }
        public function getImages() {
 
-        $query = "SELECT * from settings where name LIKE '%image%'";
-        
+//        $query = "SELECT * from settings where name LIKE '%image%'";
+                $query = "SELECT * from settings where name NOT LIKE '%color%'";
+
         return self::getDataByQuery($this, $query);
     } 
    public function getCardColors() {

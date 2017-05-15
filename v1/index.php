@@ -5,6 +5,8 @@ require_once '../include/PassHash.php';
 require_once '../include/Responce.php';
 require '.././libs/Slim/Slim.php';
 
+require_once '../include/Push.php';
+require_once '../include/firebase.php';
 
 \Slim\Slim::registerAutoloader();
 
@@ -61,33 +63,50 @@ function authenticate(\Slim\Route $route) {
  */
 $app->post('/register', function() use ($app) {
             // check for required params
-            verifyRequiredParams(array('name', 'email', 'password'));
+            verifyRequiredParams(array(
+//                'name',
+//                'email'
+//                , 'password'
+//                ,'device_id'
+                'firebase_reg_id'
 
-            $response = array();
+                ));
+
+            $Responce = new Responce();
 
             // reading post params
-            $name = $app->request->post('name');
+            $fname = $app->request->post('fname');
+            $lname = $app->request->post('lname');
+            $phone = $app->request->post('phone');
             $email = $app->request->post('email');
-            $password = $app->request->post('password');
+            $device_id = $app->request->post('device_id');
+            $firebase_reg_id = $app->request->post('firebase_reg_id');
 
             // validating email address
-            validateEmail($email);
+//            validateEmail($email);
 
             $db = new DbHandler();
-            $res = $db->createUser($name, $email, $password);
+            $res = $db->createUser($fname, $lname, $phone, $email, $device_id, $firebase_reg_id);
 
             if ($res == USER_CREATED_SUCCESSFULLY) {
-                $response["error"] = false;
-                $response["message"] = "You are successfully registered";
+                
+                $user = $db->getUserByEmail($email);
+
+                $Responce->setError(false);
+                $Responce->setMessage("You are successfully registered");
+                $Responce->setData("user",$user);
+
             } else if ($res == USER_CREATE_FAILED) {
-                $response["error"] = true;
-                $response["message"] = "Oops! An error occurred while registereing";
+                $Responce->setError(true);
+                $Responce->setMessage("Oops! An error occurred while registereing");
+
             } else if ($res == USER_ALREADY_EXISTED) {
-                $response["error"] = true;
-                $response["message"] = "Sorry, this email already existed";
+                $Responce->setError(true);
+                $Responce->setMessage("Sorry, this email already existed");
+
             }
             // echo json response
-            echoRespnse(201, $response);
+            echoRespnse(201, $Responce->setArray());
         });
 
 /**
@@ -197,7 +216,146 @@ $app->post('/update_share_count', function() use ($app) {
             
             echoRespnse(201, $Responce->setArray());
         });
-		
+	
+        
+$app->post('/like_post',  'authenticate',  function() use ($app) {
+            // check for required params
+
+            verifyRequiredParams(array('post_id'));
+            $post_id = $app->request()->post('post_id');
+			
+            global $user_id;
+            
+            $response = array();
+            $db = new DbHandler();
+            
+            $Responce = new Responce();
+
+            // fetch task
+            $result = $db->likePost($user_id, $post_id);
+
+            if ($result) {
+                $Responce->setError(false);
+                $Responce->setMessage("Liked");
+
+            } else {
+                $Responce->setError(false);
+                $Responce->setMessage("Filed");
+      
+            }
+            
+            echoRespnse(201, $Responce->setArray());
+        });
+      
+$app->post('/unlike_post',  'authenticate',  function() use ($app) {
+            // check for required params
+
+            verifyRequiredParams(array('post_id'));
+            $post_id = $app->request()->post('post_id');
+			
+            global $user_id;
+            
+            $response = array();
+            $db = new DbHandler();
+            
+            $Responce = new Responce();
+
+            // fetch task
+            $result = $db->unLikePost($user_id, $post_id);
+
+            if ($result) {
+                $Responce->setError(false);
+                $Responce->setMessage("Unliked");
+
+            } else {
+                $Responce->setError(false);
+                $Responce->setMessage("Filed");
+      
+            }
+            
+            echoRespnse(201, $Responce->setArray());
+        });
+        
+        
+        
+$app->post('/send_notification',  'authenticate',  function() use ($app) {
+            // check for required params
+
+            
+            $title = $app->request()->post('title');
+            $message = $app->request()->post('message');
+            $push_type = $app->request()->post('push_type');
+            $image = $app->request()->post('image');
+	    $firebase_reg_id = $app->request()->post('firebase_reg_id');
+
+            global $user_id;
+            
+//            $response = array();
+//            $db = new DbHandler();
+//            
+            $Responce = new Responce();
+            
+            
+            $firebase = new Firebase();
+            $push = new Push();
+ 
+            // optional payload
+            $payload = array();
+            $payload['team'] = 'India';
+            $payload['score'] = '5.6';
+ 
+                           
+            // whether to include to image or not
+            $include_image = isset($image) ? TRUE : FALSE;
+ 
+ 
+            $push->setTitle($title);
+            $push->setMessage($message);
+            if ($include_image) {
+                $push->setImage($image);
+            } else {
+                $push->setImage('');
+            }
+            $push->setIsBackground(FALSE);
+            $push->setPayload($payload);
+ 
+ 
+            $json = '';
+            $response = '';
+ 
+            if ($push_type == 'topic') {
+                $json = $push->getPush();
+                $response = $firebase->sendToTopic('global', $json);
+                
+                $Responce->setError(false);
+                $Responce->setMessage("Sent");
+                $Responce->setData("json",$json);
+
+                $Responce->setData("responce",$response);
+            } else if ($push_type == 'individual') {
+                $json = $push->getPush();
+                $response = $firebase->send($firebase_reg_id, $json);
+        }
+        
+        
+//
+//            // fetch task
+//            $result = $db->unLikePost($user_id, $post_id);
+//
+//            if ($result) {
+//                $Responce->setError(false);
+//                $Responce->setMessage("Unliked");
+//
+//            } else {
+//                $Responce->setError(false);
+//                $Responce->setMessage("Filed");
+//      
+//            }
+//            
+            echoRespnse(201, $Responce->setArray());
+        });
+
+        
 //$app->get('/get_posts/:tag_id/:auther_id','authenticate',
 //		
 //		function($tag_id,$auther_id,$quote_id) 
@@ -251,8 +409,8 @@ $app->get('/get_posts/:language_id/:category_id/:page_no', 'authenticate',
     $Responce = new Responce();
 
     // fetch task
-    $resultLatest = $db->getPosts(null, $category_id,$language_id, TRUE, FALSE,$page_no,POST_LIMIT);
-    $resultTop = $db->getPosts(null, $category_id,$language_id, FALSE, TRUE,$page_no,POST_LIMIT);
+    $resultLatest = $db->getPosts($user_id, $category_id,$language_id, TRUE, FALSE,$page_no,POST_LIMIT);
+    $resultTop = $db->getPosts($user_id, $category_id,$language_id, FALSE, TRUE,$page_no,POST_LIMIT);
 
 
     if ($resultLatest != NULL || $resultTop) 
@@ -329,8 +487,8 @@ $app->get('/get_dashboard/:language_id', 'authenticate',
 
     $Responce = new Responce();
 
-    $resultLatest = $db->getPosts(null, null,$language_id, TRUE, FALSE,1,POST_LIMIT);
-    $resultTop = $db->getPosts(null, null,$language_id, FALSE, TRUE,1,POST_LIMIT);
+    $resultLatest = $db->getPosts($user_id, null,$language_id, TRUE, FALSE,1,POST_LIMIT);
+    $resultTop = $db->getPosts($user_id, null,$language_id, FALSE, TRUE,1,POST_LIMIT);
 	$resultCategories = $db->getCategories($language_id);
 	$resultImages = $db->getImages();
 	$resultCardColors = $db->getCardColors();
