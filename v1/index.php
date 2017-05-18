@@ -486,9 +486,10 @@ $app->get('/get_dashboard/:language_id', 'authenticate',
     $db = new DbHandler();
 
     $Responce = new Responce();
-
-    $resultLatest = $db->getPosts($user_id, null,$language_id, TRUE, FALSE,1,POST_LIMIT);
-    $resultTop = $db->getPosts($user_id, null,$language_id, FALSE, TRUE,1,POST_LIMIT);
+			
+    $resultLanguages = $db->getLanguages();
+//    $resultLatest = $db->getPosts($user_id, null,$language_id, TRUE, FALSE,1,POST_LIMIT);
+//    $resultTop = $db->getPosts($user_id, null,$language_id, FALSE, TRUE,1,POST_LIMIT);
 	$resultCategories = $db->getCategories($language_id);
 	$resultImages = $db->getImages();
 	$resultCardColors = $db->getCardColors();
@@ -496,19 +497,21 @@ $app->get('/get_dashboard/:language_id', 'authenticate',
 
 	
 
-    if ($resultLatest != NULL) {
+    if ($resultLanguages != NULL) {
         $Responce->setError(false);
         $Responce->setMessage("false");
-        $Responce->setData('latest', $resultLatest);
-        $Responce->setData('top', $resultTop);
+                
+        $Responce->setData('languages', $resultLanguages);
+//        $Responce->setData('latest', $resultLatest);
+//        $Responce->setData('top', $resultTop);
         $Responce->setData('categories', $resultCategories);
-		$Responce->setData('settings', $resultImages);
-		$Responce->setData('card_colors', $resultCardColors);
+	$Responce->setData('settings', $resultImages);
+	$Responce->setData('card_colors', $resultCardColors);
 
 
     } else {     
         $Responce->setError(false);
-        $Responce->setMessage("false");
+        $Responce->setMessage("No Data");
     }
 
     echoRespnse(201, $Responce->setArray());

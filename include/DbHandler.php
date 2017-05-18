@@ -897,8 +897,14 @@ class DbHandler {
     }
     public function getCategories($language_id) {
 
-        $query = "SELECT * from categories WHERE id_language = $language_id
-    				ORDER BY id_category  ASC";
+//        $query = "SELECT * from categories WHERE id_language = $language_id
+//    				ORDER BY id_category  ASC";
+        
+        $query = "SELECT c.*, 
+	(SELECT count(*) from posts p WHERE p.id_category = c.id_category ) as count 
+        from categories c 
+        WHERE c.id_language = $language_id
+        ORDER BY c.id_category  ASC";
         
         return self::getDataByQuery($this, $query);
     }
