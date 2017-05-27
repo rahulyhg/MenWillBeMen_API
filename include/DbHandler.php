@@ -67,14 +67,18 @@ class DbHandler {
         $response = array();
 
         // First check if user already existed in db
-        if (!$this->isUserExists($email)) {
+        if (!$this->isUserExists($device_id)) {
             // Generating password hash
-            $password_hash = PassHash::hash($email);
+            $password_hash = PassHash::hash($device_id);
 
             // Generating API key
             $api_key = $this->generateApiKey();
 
                                    
+//            echo "INSERT INTO users"
+//                    . "(fname,lname,phone, email, device_id,password_hash, api_key,firebase_reg_id)"
+//                    . " values('$fname', '$lname', '$phone', '$email', '$device_id','$password_hash',"
+//                    . " '$api_key', '$firebase_reg_id')";
             // insert query
             $stmt = $this->conn->prepare("INSERT INTO users"
                     . "(fname,lname,phone, email, device_id,password_hash, api_key,firebase_reg_id)"
@@ -95,7 +99,13 @@ class DbHandler {
             }
         } else {
             // User with same email already existed in the db
-            return USER_ALREADY_EXISTED;
+            
+            $stmt = $this->conn->prepare("UPDATE `users` SET `firebase_reg_id`= '$firebase_reg_id'  WHERE device_id = '$device_id'");
+
+            $result = $stmt->execute();
+            
+            
+            return USER_UPDATED;
         }
 
         return $response;
@@ -147,9 +157,19 @@ class DbHandler {
      * @param String $email email to check in db
      * @return boolean
      */
-    private function isUserExists($email) {
-        $stmt = $this->conn->prepare("SELECT id from users WHERE email = ?");
-        $stmt->bind_param("s", $email);
+//    private function isUserExists($email) {
+//        $stmt = $this->conn->prepare("SELECT id from users WHERE email = ?");
+//        $stmt->bind_param("s", $email);
+//        $stmt->execute();
+//        $stmt->store_result();
+//        $num_rows = $stmt->num_rows;
+//        $stmt->close();
+//        return $num_rows > 0;
+//    }
+    
+        private function isUserExists($device_id) {
+        $stmt = $this->conn->prepare("SELECT id from users WHERE device_id = ?");
+        $stmt->bind_param("s", $device_id);
         $stmt->execute();
         $stmt->store_result();
         $num_rows = $stmt->num_rows;
@@ -181,6 +201,13 @@ class DbHandler {
 //        
 //        
         $query = "SELECT * FROM users where email = '$email'";
+        return self::getDataByQuery($this, $query);
+    }
+    
+    
+        public function getUserByDeviceId($device_id) {
+   
+        $query = "SELECT * FROM users where device_id = '$device_id'";
         return self::getDataByQuery($this, $query);
     }
 
@@ -300,7 +327,7 @@ class DbHandler {
     }
 
     public function getPosts($user_id, $category_id, $language_id,
-            $latest, $top, $page_no,$limit) {
+            $type, $page_no,$limit) {
    
         $offset = ($page_no-1)*$limit;
 
@@ -316,7 +343,7 @@ class DbHandler {
 //                    . "LIMIT $offset,$limit ""
 //                        . "
         // DashBoard Latest
-        if($latest && $category_id == NULL ){
+        if($type == LATEST && $category_id == NULL ){
             $query = "SELECT p.*, c.*, "
                     . "( SELECT COUNT(upl.id_post) FROM user_post_likes upl WHERE upl.id_post = p.id_post ) as post_likes_count, "
                     . "(SELECT EXISTS(SELECT upl.id_user FROM user_post_likes upl WHERE upl.id_post = p.id_post AND upl.id_user = $user_id)) as is_liked "
@@ -329,7 +356,7 @@ class DbHandler {
             return self::getDataByQuery($this, $query);
         }
         // DashBoard TOP
-        if($top && $category_id == NULL){
+        if($type == TOP && $category_id == NULL){
             $query = "SELECT p.*, c.*, "
                      . "( SELECT COUNT(upl.id_post) FROM user_post_likes upl WHERE upl.id_post = p.id_post ) as post_likes_count, "
                     . "(SELECT EXISTS(SELECT upl.id_user FROM user_post_likes upl WHERE upl.id_post = p.id_post AND upl.id_user = $user_id)) as is_liked "
@@ -341,7 +368,7 @@ class DbHandler {
             return self::getDataByQuery($this, $query);
         }
         // Category TOP
-        if($latest && $category_id != NULL){
+        if($type == LATEST && $category_id != NULL){
             $query = "SELECT p.*, c.*, 
                      ( SELECT COUNT(upl.id_post) FROM user_post_likes upl WHERE upl.id_post = p.id_post ) as post_likes_count,
                      ( SELECT EXISTS(SELECT upl.id_user FROM user_post_likes upl WHERE upl.id_post = p.id_post AND upl.id_user = $user_id)) as is_liked
@@ -356,7 +383,7 @@ class DbHandler {
             return self::getDataByQuery($this, $query);
         }
         // DashBoard TOP
-        if($top && $category_id != NULL){
+        if($type == TOP && $category_id != NULL){
             $query = "SELECT p.*, c.*, "
                     ."    ( SELECT COUNT(upl.id_post) FROM user_post_likes upl WHERE upl.id_post = p.id_post ) as post_likes_count,"
                     ." ( SELECT EXISTS(SELECT upl.id_user FROM user_post_likes upl WHERE upl.id_post = p.id_post AND upl.id_user = $user_id)) as is_liked"
@@ -854,6 +881,34 @@ class DbHandler {
     return self::updateDataByQuery($this, $query);
 
     }
+    
+    public function insertPost($user_id,$language_id,$category_id,$post) {
+
+        
+
+        
+          $query = "INSERT INTO `posts`"
+                  . "( `id_language`, `id_user`, `id_category`, `post`, `status`)"
+                  . " VALUES ($language_id,$user_id,$category_id,'$post',0)";
+        
+        return self::updateDataByQuery($this, $query);
+
+    }
+    
+    
+    public function insertFeedback($user_id,$feedback,$emoji) {
+
+        
+
+        
+          $query = "INSERT INTO `feedbacks`"
+                  . "( `id_user`,`feedback`, `emoji`)"
+                  . " VALUES ($user_id,'$feedback',$emoji)";
+        
+        return self::updateDataByQuery($this, $query);
+
+    }
+    
 	
     public function updateShareCount($post_id) {
 
@@ -933,6 +988,15 @@ class DbHandler {
 
     }
     
+    public function getTranslations() {
+
+        $query = "SELECT m.multilang_msg_title, t.translation, l.id_language  
+FROM multilang_msg m, translation t, languages l
+WHERE m.id_multilang_msg = t.id_multilang_msg
+AND t.id_language = l.id_language";
+        return self::getDataByQuery($this, $query);
+
+    }
     
     public static function getPOFDID($context) {
 

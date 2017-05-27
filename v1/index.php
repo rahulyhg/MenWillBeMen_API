@@ -19,6 +19,64 @@ $user_id = NULL;
  * Adding Middle Layer to authe   nticate every request
  * Checking if the request has valid api key in the 'Authorization' header
  */
+ 
+  function apache_request_headers() {
+  $arh = array();
+  $rx_http = '/\AHTTP_/';
+  foreach($_SERVER as $key => $val) {
+    if( preg_match($rx_http, $key) ) {
+      $arh_key = preg_replace($rx_http, '', $key);
+      $rx_matches = array();
+      // do some nasty string manipulations to restore the original letter case
+      // this should work in most cases
+      $rx_matches = explode('_', $arh_key);
+      if( count($rx_matches) > 0 and strlen($arh_key) > 2 ) {
+        foreach($rx_matches as $ak_key => $ak_val) $rx_matches[$ak_key] = ucfirst($ak_val);
+        $arh_key = implode('-', $rx_matches);
+      }
+      $arh[$arh_key] = $val;
+    }
+  }
+  return( $arh );
+}
+
+function authenticate(\Slim\Route $route) {
+    // Getting request headers
+	
+	//print_r( $_SERVER);
+    $headers = apache_request_headers();
+
+	//print_r($headers);
+    $response = array();
+    $app = \Slim\Slim::getInstance();
+
+    // Verifying Authorization Header
+    if (isset($headers['AUTHORIZATION'])) {
+        $db = new DbHandler();
+
+        // get the api key
+        $api_key = $headers['AUTHORIZATION'];
+        // validating api key
+        if (!$db->isValidApiKey($api_key)) {
+            // api key is not present in users table
+            $response["error"] = true;
+            $response["message"] = "Access Denied. Invalid Api key";
+            echoRespnse(401, $response);
+            $app->stop();
+        } else {
+            global $user_id;
+            // get user primary key id
+            $user_id = $db->getUserId($api_key);
+        }
+    } else {
+        // api key is missing in header
+        $response["error"] = true;
+        $response["message"] = "Api key is misssing";
+        echoRespnse(400, $response);
+        $app->stop();
+    }
+}
+/*
 function authenticate(\Slim\Route $route) {
     // Getting request headers
     $headers = apache_request_headers();
@@ -51,6 +109,7 @@ function authenticate(\Slim\Route $route) {
         $app->stop();
     }
 }
+*/
 
 /**
  * ----------- METHODS WITHOUT AUTHENTICATION ---------------------------------
@@ -90,7 +149,8 @@ $app->post('/register', function() use ($app) {
 
             if ($res == USER_CREATED_SUCCESSFULLY) {
                 
-                $user = $db->getUserByEmail($email);
+                
+                $user = $db->getUserByDeviceId($device_id);
 
                 $Responce->setError(false);
                 $Responce->setMessage("You are successfully registered");
@@ -100,9 +160,13 @@ $app->post('/register', function() use ($app) {
                 $Responce->setError(true);
                 $Responce->setMessage("Oops! An error occurred while registereing");
 
-            } else if ($res == USER_ALREADY_EXISTED) {
-                $Responce->setError(true);
-                $Responce->setMessage("Sorry, this email already existed");
+            } else if ($res == USER_UPDATED) {
+
+                $user = $db->getUserByDeviceId($device_id);
+                $Responce->setError(false);
+                $Responce->setMessage("User updated");
+                $Responce->setData("user",$user);
+
 
             }
             // echo json response
@@ -276,6 +340,68 @@ $app->post('/unlike_post',  'authenticate',  function() use ($app) {
             echoRespnse(201, $Responce->setArray());
         });
         
+$app->post('/add_post',  'authenticate', function() use ($app) {
+            // check for required params
+
+            verifyRequiredParams(array('language_id','category_id','post'));
+           
+            $language_id = $app->request()->post('language_id');
+            $category_id = $app->request()->post('category_id');
+            $post = $app->request()->post('post');
+			
+            global $user_id;
+            
+            $response = array();
+            $db = new DbHandler();
+            
+            $Responce = new Responce();
+
+            // fetch task
+            $result = $db->insertPost($user_id,$language_id,$category_id,$post);
+
+            if ($result) {
+                $Responce->setError(false);
+                $Responce->setMessage("Your message is submitted.");
+
+            } else {
+                $Responce->setError(true);
+                $Responce->setMessage("failed");
+      
+            }
+            
+            echoRespnse(201, $Responce->setArray());
+        });
+ 
+$app->post('/submit_feedback',  'authenticate', function() use ($app) {
+            // check for required params
+
+            verifyRequiredParams(array('emoji','feedback'));
+           
+            $emoji = $app->request()->post('emoji');
+            $feedback = $app->request()->post('feedback');
+			
+            global $user_id;
+            
+            $response = array();
+            $db = new DbHandler();
+            
+            $Responce = new Responce();
+
+            // fetch task
+            $result = $db->insertFeedback($user_id,$feedback,$emoji);
+
+            if ($result) {
+                $Responce->setError(false);
+                $Responce->setMessage("Your feedback is submitted.");
+
+            } else {
+                $Responce->setError(true);
+                $Responce->setMessage("failed");
+      
+            }
+            
+            echoRespnse(201, $Responce->setArray());
+        });
         
         
 $app->post('/send_notification',  'authenticate',  function() use ($app) {
@@ -393,8 +519,8 @@ $app->post('/send_notification',  'authenticate',  function() use ($app) {
 //            echoRespnse(201, $Responce->setArray());
 //        });
 
-$app->get('/get_posts/:language_id/:category_id/:page_no', 'authenticate', 
-        function($language_id,$category_id,$page_no) {
+$app->get('/get_posts/:language_id/:category_id/:type/:page_no', 'authenticate', 
+        function($language_id,$category_id,$type,$page_no) {
 
     global $user_id;
 	
@@ -409,16 +535,26 @@ $app->get('/get_posts/:language_id/:category_id/:page_no', 'authenticate',
     $Responce = new Responce();
 
     // fetch task
-    $resultLatest = $db->getPosts($user_id, $category_id,$language_id, TRUE, FALSE,$page_no,POST_LIMIT);
-    $resultTop = $db->getPosts($user_id, $category_id,$language_id, FALSE, TRUE,$page_no,POST_LIMIT);
+    if($type == LATEST){
+            $resultLatest = $db->getPosts($user_id, $category_id,$language_id, $type,$page_no,POST_LIMIT);
+    }else{
+            $resultTop = $db->getPosts($user_id, $category_id,$language_id,$type,$page_no,POST_LIMIT);
+    }
 
 
-    if ($resultLatest != NULL || $resultTop) 
+    if ($type != NULL) 
 	{
         $Responce->setError(false);
         $Responce->setMessage("false");
+        
+        if($type == LATEST){
         $Responce->setData('latest', $resultLatest);
+        }else{
         $Responce->setData('top', $resultTop);
+        }
+    
+    
+//        $Responce->setData('top', $resultTop);
 
 //                $result["error"] = false;
 //                $response["id"] = $result["id"];
@@ -438,43 +574,7 @@ $app->get('/get_posts/:language_id/:category_id/:page_no', 'authenticate',
 });
 
 
-//$app->get('/get_dashboard/','authenticate',
-//
-//		function()
-//		{
-//			global $user_id;
-//
-//
-//			$response = array();
-//			$db = new DbHandler();
-//
-//			$Responce = new Responce();
-//
-//			// fetch task
-//			$resultQOD = $db->getPosts(null,null,null,TRUE,null,null);
-//			$resultMFQ = $db->getPosts(null,null,null,null,TRUE,null);
-//			$resultRQ = $db->getPosts(null,null,null,null,null,TRUE);
-//			$resultCardColors = $db->getCardColors();
-//
-//                        $resultQOD = $db->getPosts(null,null,null,TRUE,null,null);
-//
-//			if ($resultQOD != NULL) {
-//				$Responce->setError(false);
-//				$Responce->setMessage("false");
-//				$Responce->setData('quote_of_the_day',$resultQOD);
-//				$Responce->setData('most_fevourite_quote',$resultMFQ);
-//				$Responce->setData('random_quote',$resultRQ);
-//				$Responce->setData('card_colors',$resultCardColors);
-//
-//
-//			} else {
-//				$Responce->setError(false);
-//				$Responce->setMessage("false");
-//		
-//			}
-//
-//			echoRespnse(201, $Responce->setArray());
-//});
+
 
 $app->get('/get_dashboard/:language_id', 'authenticate', 
         
@@ -493,7 +593,8 @@ $app->get('/get_dashboard/:language_id', 'authenticate',
 	$resultCategories = $db->getCategories($language_id);
 	$resultImages = $db->getImages();
 	$resultCardColors = $db->getCardColors();
-	
+//        $resultTranslation = $db->getTranslations();
+
 
 	
 
@@ -507,6 +608,7 @@ $app->get('/get_dashboard/:language_id', 'authenticate',
         $Responce->setData('categories', $resultCategories);
 	$Responce->setData('settings', $resultImages);
 	$Responce->setData('card_colors', $resultCardColors);
+//	$Responce->setData('translations', $resultTranslation);
 
 
     } else {     
